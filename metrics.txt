@@ -1,0 +1,10 @@
+Confusion Matrix:
+[[142   0]
+ [  0   5]]
+True Negatives (TN): 142
+False Positives (FP): 0
+False Negatives (FN): 0
+True Positives (TP): 5
+Accuracy: 1.00
+Precision: 1.00
+Recall: 1.00

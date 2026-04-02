@@ -1,0 +1,199 @@
+1. Importing Libraries
+
+import sys
+import cv2
+import torch
+import numpy as np
+from pathlib import Path
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.image import MIMEImage
+from email.utils import formataddr
+from datetime import datetime
+import threading
+sys: Provides access to system-specific parameters and functions.
+cv2: OpenCV library for computer vision tasks, such as reading video frames and displaying images.
+torch: PyTorch library for working with deep learning models.
+numpy: Library for numerical operations on arrays.
+pathlib.Path: Provides methods to handle and manipulate filesystem paths.
+smtplib: Defines an SMTP client session object for sending emails.
+email.mime: Used to create MIME (Multipurpose Internet Mail Extensions) objects for composing emails.
+datetime: For handling date and time.
+threading: To run video capture and processing in a separate thread.
+
+
+
+2. YOLOv5 Setup
+
+yolov5_path = 'A:/firedetect/yolov5'
+if yolov5_path not in sys.path:
+    sys.path.append(yolov5_path)
+
+from models.common import DetectMultiBackend
+from utils.general import check_img_size, non_max_suppression
+from utils.plots import Annotator, colors
+from utils.torch_utils import select_device
+yolov5_path: Path to the YOLOv5 codebase.
+sys.path.append(yolov5_path): Adds the YOLOv5 path to Python’s module search path.
+DetectMultiBackend: Class for loading YOLOv5 models.
+check_img_size, non_max_suppression: Functions for image size checks and applying non-max suppression, respectively.
+Annotator, colors: Functions for drawing bounding boxes and labels on images.
+select_device: Function to choose the computing device (CPU/GPU).
+
+
+
+
+3. Load YOLOv5 Model
+
+model_path = 'A:/firedetect/yolov5/runs/train/exp3/weights/best.pt'
+device = select_device('')
+model = DetectMultiBackend(model_path, device=device)
+stride, names, pt = model.stride, model.names, model.pt
+imgsz = check_img_size(640, s=stride)  # check image size
+model_path: Path to the trained YOLOv5 model weights.
+select_device(''): Automatically selects the available device (CPU or GPU).
+DetectMultiBackend: Loads the YOLOv5 model.
+stride, names, pt: Extracts model-specific parameters.
+check_img_size: Ensures the image size is suitable for the model.
+
+
+
+
+4. Initialize Video Capture
+
+cap = cv2.VideoCapture(0)
+
+if not cap.isOpened():
+    print("Error: Could not open video capture device.")
+    exit()
+cv2.VideoCapture(0): Initializes video capture from the default webcam.
+cap.isOpened(): Checks if the webcam was successfully opened.
+
+
+
+5. Email Function
+
+sender_email = "ayushpoojari100@gmail.com"
+receiver_email = "ayushpoojari100@gmail.com"
+password = "lcid grxf mwiy xbdc"  # Replace with your app password
+
+def send_email(subject, body, image_path):
+    msg = MIMEMultipart()
+    msg['From'] = formataddr(('Fire Detection System', sender_email))
+    msg['To'] = receiver_email
+    msg['Subject'] = subject
+
+    msg.attach(MIMEText(body, 'plain'))
+
+    with open(image_path, 'rb') as img_file:
+        img = MIMEImage(img_file.read())
+        img.add_header('Content-Disposition', 'attachment', filename=image_path)
+        msg.attach(img)
+
+    try:
+        with smtplib.SMTP('smtp.gmail.com', 587) as server:
+            server.starttls()
+            server.login(sender_email, password)
+            server.sendmail(sender_email, receiver_email, msg.as_string())
+            print("Email sent successfully.")
+    except Exception as e:
+        print(f"Failed to send email: {e}")
+send_email: Function to compose and send an email.
+MIMEMultipart: Creates a multipart email.
+MIMEText: Adds text content to the email.
+MIMEImage: Attaches the image to the email.
+smtplib.SMTP: Handles the email sending process via Gmail’s SMTP server.
+
+
+6. Frame Processing
+
+def run_inference(frame):
+    img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    img = cv2.resize(img, (640, 640))  # Resize for faster processing
+    img = np.transpose(img, (2, 0, 1))  # HWC to CHW
+    img = np.expand_dims(img, axis=0)
+    img = np.ascontiguousarray(img)
+    img = torch.from_numpy(img).to(device)
+    img = img.half() if model.fp16 else img.float()  # uint8 to fp16/32
+    img /= 255.0  # 0 - 255 to 0.0 - 1.0
+    pred = model(img)
+    pred = non_max_suppression(pred, 0.25, 0.45, agnostic=False)
+    return pred
+run_inference: Function to preprocess the frame, run it through the YOLOv5 model, and apply non-max suppression.
+cv2.cvtColor: Converts the frame from BGR to RGB.
+cv2.resize: Resizes the frame for faster processing.
+np.transpose: Reorders dimensions for the model input.
+torch.from_numpy: Converts the numpy array to a PyTorch tensor.
+model(img): Runs inference on the image.
+non_max_suppression: Removes duplicate detections.
+
+
+
+7. Frame Processing for Fire Detection
+
+def process_frame(frame):
+    pred = run_inference(frame)
+    fire_detected = False
+    for i, det in enumerate(pred):  # detections per image
+        annotator = Annotator(frame, line_width=2, example=str(names))
+        if len(det):
+            for *xyxy, conf, cls in reversed(det):
+                if names[int(cls)] == 'fire':  # Assuming 'fire' is the class name for fire
+                    fire_detected = True
+                # Draw bounding box and label
+                label = f'{names[int(cls)]} {conf:.2f}'
+                annotator.box_label([int(xyxy[0]), int(xyxy[1]), int(xyxy[2]), int(xyxy[3])], label, color=colors(cls))
+        frame = annotator.result()
+
+    return frame, fire_detected
+process_frame: Function to run inference and annotate the frame.
+annotator.box_label: Draws bounding boxes and labels on the frame.
+fire_detected: Boolean indicating if fire is detected.
+
+
+8. Capture and Process Frames
+
+def capture_and_process():
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        frame, fire_detected = process_frame(frame)
+
+        if fire_detected:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            image_path = f'detected_fire_{timestamp}.jpg'
+            cv2.imwrite(image_path, frame)
+            send_email(
+                subject="Fire Detected!",
+                body="Fire has been detected. Please find the attached image.",
+                image_path=image_path
+            )
+
+        cv2.imshow('Fire Detection', frame)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+capture_and_process: Function to continuously capture frames from the webcam, process them, and send an email if fire is detected.
+cv2.imwrite: Saves the detected frame with a timestamp.
+send_email: Sends an email with the attached image.
+cv2.imshow: Displays the frame with annotations.
+
+
+
+
+9. Run in Separate Thread
+python
+Copy code
+capture_thread = threading.Thread(target=capture_and_process)
+capture_thread.start()
+threading.Thread: Runs the capture_and_process function in a separate thread, allowing the main thread to remain responsive.
+
+
+Summary
+This script performs real-time fire detection using YOLOv5. It continuously captures frames from a webcam, processes them to detect fire, and if fire is detected, saves the frame and sends an email alert with the image attached. The use of threading helps to keep the video capture and processing operations smooth and responsive.

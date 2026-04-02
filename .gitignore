@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+
+# Data
+datasets/
+*.csv
+*.json
+
+# Models
+*.pkl
+*.pt
+*.h5
+
+# Outputs
+results/
+detected_fire_images/
+
+# Videos & images (large)
+*.mp4
+*.avi
+
+# YOLO (if cloned)
+yolov5/
+
+# System
+.DS_Store
+
+.env
